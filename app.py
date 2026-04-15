@@ -4,6 +4,7 @@ import chess
 import chess.pgn
 import chess.svg
 from streamlit_option_menu import option_menu
+import os
 
 st.set_page_config(layout="wide")
 
@@ -54,10 +55,18 @@ def load_pgn_sequences(pgn_file):
 
 
 # =========================
-# FILES
+# FILES (UPDATED STRUCTURE)
 # =========================
 excel_file = "data/dataset-scored.xlsx"
 pgn_file = "data/puzzles_with_moves.pgn"
+
+if not os.path.exists(excel_file):
+    st.error(f"Missing file: {excel_file}")
+    st.stop()
+
+if not os.path.exists(pgn_file):
+    st.error(f"Missing file: {pgn_file}")
+    st.stop()
 
 models, data = load_data(excel_file)
 pgn_data = load_pgn_sequences(pgn_file)
@@ -108,54 +117,68 @@ if selected == "Explorer":
     # =========================
     if "move_index" not in st.session_state:
         st.session_state.move_index = 0
-    
+
     if "current_puzzle" not in st.session_state:
         st.session_state.current_puzzle = puzzle_id
-    
+
     if st.session_state.current_puzzle != puzzle_id:
         st.session_state.current_puzzle = puzzle_id
         st.session_state.move_index = 0
-    
-    
+
     # =========================
-    # MAIN LAYOUT
+    # LAYOUT
     # =========================
     col1, col2 = st.columns([1.2, 2])
-    
+
     # =========================
-    # LEFT: BOARD + CONTROLS
+    # LEFT: CONTROLS + BOARD
     # =========================
     with col1:
+
         st.subheader("♟️ Position")
-    
-        # 🔥 CONTROLS FIRST (IMPORTANT)
+
+        # 🔥 CONTROLS FIRST (fix)
         colA, colB, colC, colD = st.columns(4)
-    
+
         with colA:
             if st.button("⏮ Reset"):
                 st.session_state.move_index = 0
-    
+
         with colB:
             if st.button("⬅️ Prev"):
                 if st.session_state.move_index > 0:
                     st.session_state.move_index -= 1
-    
+
         with colC:
             if st.button("➡️ Next"):
                 if st.session_state.move_index < len(moves):
                     st.session_state.move_index += 1
-    
+
         with colD:
             if st.button("⏭ End"):
                 st.session_state.move_index = len(moves)
-    
+
         # 🔥 BUILD BOARD AFTER BUTTONS
         board = chess.Board(initial_fen)
         for i in range(st.session_state.move_index):
             board.push(moves[i])
-    
+
         svg = chess.svg.board(board=board, size=720)
         st.image(svg)
+
+    # =========================
+    # CURRENT MOVE (FIXED)
+    # =========================
+    current_san = None
+
+    if st.session_state.move_index > 0:
+        temp_board = chess.Board(initial_fen)
+
+        for i in range(st.session_state.move_index - 1):
+            temp_board.push(moves[i])
+
+        current_move = moves[st.session_state.move_index - 1]
+        current_san = temp_board.san(current_move)
 
     # =========================
     # RIGHT: MOVES + EXPLANATIONS
@@ -210,7 +233,7 @@ if selected == "Explorer":
                             st.write(r.fixed_claim)
 
     # =========================
-    # TABLE (FULL DATA)
+    # TABLE
     # =========================
     st.markdown("---")
     st.subheader("📊 Annotated Data (Full)")
@@ -230,22 +253,18 @@ if selected == "Explorer":
                 "Correction": r.fixed_claim
             })
 
-    table_df = pd.DataFrame(table_rows)
+    st.dataframe(pd.DataFrame(table_rows))
 
-    st.dataframe(table_df)
+
 # =========================
-# RANKING (FIXED + FILTERABLE)
+# RANKING
 # =========================
 elif selected == "Ranking":
 
     import plotly.express as px
-    import pandas as pd
 
     st.title("📊 Model Ranking & Analysis")
 
-    # =========================
-    # FIXED PARAMETERS
-    # =========================
     category_weights = {
         "move_legality": 8,
         "piece_placement": 6,
@@ -265,21 +284,18 @@ elif selected == "Ranking":
 
     delta = 0.7
 
-    # =========================
-    # CLEAN MAPPING
-    # =========================
     def extract_category(text):
         text = str(text).lower()
 
-        if "move" in text and "illegal" in text:
+        if "illegal" in text:
             return "move_legality"
-        if "square" in text or "placement" in text:
+        if "square" in text:
             return "piece_placement"
         if "material" in text:
             return "material"
-        if "pin" in text or "fork" in text or "attack" in text:
+        if "pin" in text or "fork" in text:
             return "piece_relations"
-        if "diagonal" in text or "file" in text or "rank" in text:
+        if "diagonal" in text:
             return "geometry"
         if "reason" in text:
             return "reasoning"
@@ -288,154 +304,76 @@ elif selected == "Ranking":
 
     def extract_severity(text):
         text = str(text).lower()
-
         if "major" in text:
             return "major"
         if "medium" in text:
             return "medium"
-
         return "minor"
 
-    # =========================
-    # BUILD FULL DATASET
-    # =========================
     all_rows = []
 
     for model in models:
-        df = data[model].copy()
-        df = df.dropna(subset=["hallucination_type"])
+        df = data[model].dropna(subset=["hallucination_type"])
 
         for _, row in df.iterrows():
-            text = row["hallucination_type"]
-
-            cat = extract_category(text)
-            sev = extract_severity(text)
+            cat = extract_category(row["hallucination_type"])
+            sev = extract_severity(row["hallucination_type"])
 
             all_rows.append({
                 "Model": model,
                 "Puzzle": row["puzzle_id"],
                 "Category": cat,
                 "Severity": sev,
-                "BasePenalty": category_weights[cat] * severity_weights[sev]
+                "Penalty": category_weights[cat] * severity_weights[sev]
             })
 
-    full_df = pd.DataFrame(all_rows)
+    df_all = pd.DataFrame(all_rows)
 
-    # =========================
-    # FILTERS (🔥 IMPORTANT)
-    # =========================
-    st.subheader("⚙️ Filters")
-
-    selected_models = st.multiselect(
-        "Models",
-        full_df["Model"].unique(),
-        default=list(full_df["Model"].unique())
-    )
-
-    selected_categories = st.multiselect(
-        "Categories",
-        full_df["Category"].unique(),
-        default=list(full_df["Category"].unique())
-    )
-
-    selected_severity = st.multiselect(
-        "Severity",
-        full_df["Severity"].unique(),
-        default=list(full_df["Severity"].unique())
-    )
-
-    filtered_df = full_df[
-        (full_df["Model"].isin(selected_models)) &
-        (full_df["Category"].isin(selected_categories)) &
-        (full_df["Severity"].isin(selected_severity))
-    ]
-
-    # =========================
-    # SCORE COMPUTATION (CORRECT)
-    # =========================
     model_scores = []
-    heatmap_data = []
 
-    for model in selected_models:
+    for model in models:
+        df_model = df_all[df_all["Model"] == model]
 
-        df_model = filtered_df[filtered_df["Model"] == model]
-
-        total_penalty = 0
-
+        total = 0
         grouped = df_model.groupby(["Puzzle", "Category"])
 
-        for (puzzle, cat), group in grouped:
-
-            penalties = sorted(group["BasePenalty"], reverse=True)
-
-            group_penalty = 0
+        for _, group in grouped:
+            penalties = sorted(group["Penalty"], reverse=True)
             for i, p in enumerate(penalties):
-                group_penalty += p * (delta ** i)
+                total += p * (delta ** i)
 
-            total_penalty += group_penalty
-
-            heatmap_data.append({
-                "Model": model,
-                "Category": cat,
-                "Penalty": group_penalty
-            })
-
-        model_scores.append({
-            "Model": model,
-            "Penalty": total_penalty
-        })
+        model_scores.append({"Model": model, "Penalty": total})
 
     scores_df = pd.DataFrame(model_scores)
-
-    # normalize
     max_penalty = scores_df["Penalty"].max()
     scores_df["Score"] = 100 * (1 - scores_df["Penalty"] / max_penalty)
 
-    scores_df = scores_df.sort_values(by="Score", ascending=False)
+    st.dataframe(scores_df.sort_values("Score", ascending=False))
 
-    # =========================
-    # TABLE
-    # =========================
-    st.subheader("🏆 Ranking")
-    st.dataframe(scores_df)
+    pivot = df_all.groupby(["Model", "Category"])["Penalty"].sum().unstack().fillna(0)
 
-    st.markdown("---")
-
-    # =========================
-    # HEATMAP (RAW)
-    # =========================
-    st.subheader("🧩 Penalty Heatmap")
-
-    heat_df = pd.DataFrame(heatmap_data)
-
-    pivot_df = heat_df.groupby(["Model", "Category"])["Penalty"].sum().unstack().fillna(0)
-
-    fig = px.imshow(
-        pivot_df,
-        text_auto=True,
-        aspect="auto",
-        color_continuous_scale="Reds"
-    )
-
+    fig = px.imshow(pivot, text_auto=True)
     st.plotly_chart(fig, use_container_width=True)
 
-    st.markdown("---")
 
-    # =========================
-    # HEATMAP (NORMALIZED)
-    # =========================
-    st.subheader("📉 Normalized Behavior")
+# =========================
+# CONCLUSIONS
+# =========================
+elif selected == "Conclusions":
 
-    norm_df = pivot_df.div(pivot_df.sum(axis=1), axis=0)
+    st.title("🧾 Conclusions")
 
-    fig2 = px.imshow(
-        norm_df,
-        text_auto=".2f",
-        aspect="auto",
-        color_continuous_scale="Blues"
-    )
+    st.markdown("""
+LLMs show strong potential for chess education, but current models suffer from:
 
-    st.plotly_chart(fig2, use_container_width=True)
+- Structural hallucinations (board misunderstanding)
+- Reasoning hallucinations (incorrect logic)
+- Overconfidence in incorrect outputs
+
+👉 They cannot yet function as reliable standalone instructors.
+
+Future systems should combine LLMs with deterministic chess engines.
+""")
 # =========================
 # CONCLUSIONS
 # =========================
