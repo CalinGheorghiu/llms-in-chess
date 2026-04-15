@@ -108,68 +108,54 @@ if selected == "Explorer":
     # =========================
     if "move_index" not in st.session_state:
         st.session_state.move_index = 0
-
+    
     if "current_puzzle" not in st.session_state:
         st.session_state.current_puzzle = puzzle_id
-
+    
     if st.session_state.current_puzzle != puzzle_id:
         st.session_state.current_puzzle = puzzle_id
         st.session_state.move_index = 0
-
+    
+    
     # =========================
-    # BUILD BOARD
-    # =========================
-    board = chess.Board(initial_fen)
-    for i in range(st.session_state.move_index):
-        board.push(moves[i])
-
-    # =========================
-    # CURRENT MOVE
-    # =========================
-    current_san = None
-
-    if st.session_state.move_index > 0:
-        temp_board = chess.Board(initial_fen)
-        for i in range(st.session_state.move_index - 1):
-            temp_board.push(moves[i])
-
-        current_move = moves[st.session_state.move_index - 1]
-        current_san = temp_board.san(current_move)
-
-    # =========================
-    # MAIN LAYOUT (BOARD LEFT, EXPLANATION RIGHT)
+    # MAIN LAYOUT
     # =========================
     col1, col2 = st.columns([1.2, 2])
-
+    
     # =========================
     # LEFT: BOARD + CONTROLS
     # =========================
     with col1:
         st.subheader("♟️ Position")
-
-        svg = chess.svg.board(board=board, size=720)
-        st.image(svg)
-
-        # 🔥 CONTROLS DIRECTLY UNDER BOARD
+    
+        # 🔥 CONTROLS FIRST (IMPORTANT)
         colA, colB, colC, colD = st.columns(4)
-
+    
         with colA:
             if st.button("⏮ Reset"):
                 st.session_state.move_index = 0
-
+    
         with colB:
             if st.button("⬅️ Prev"):
                 if st.session_state.move_index > 0:
                     st.session_state.move_index -= 1
-
+    
         with colC:
             if st.button("➡️ Next"):
                 if st.session_state.move_index < len(moves):
                     st.session_state.move_index += 1
-
+    
         with colD:
             if st.button("⏭ End"):
                 st.session_state.move_index = len(moves)
+    
+        # 🔥 BUILD BOARD AFTER BUTTONS
+        board = chess.Board(initial_fen)
+        for i in range(st.session_state.move_index):
+            board.push(moves[i])
+    
+        svg = chess.svg.board(board=board, size=720)
+        st.image(svg)
 
     # =========================
     # RIGHT: MOVES + EXPLANATIONS
