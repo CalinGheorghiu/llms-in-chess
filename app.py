@@ -257,95 +257,187 @@ if selected == "Explorer":
 
 
 # =========================
-# RANKING (DYNAMIC HEATMAPS)
+# RANKING (FIXED + FILTERABLE)
 # =========================
 elif selected == "Ranking":
 
     import plotly.express as px
+    import pandas as pd
 
-    st.title("📊 Model Analysis (Interactive Heatmaps)")
-
-    ranking_data = []
-    hallucination_types_all = []
+    st.title("📊 Model Ranking & Analysis")
 
     # =========================
-    # BUILD DATA
+    # FIXED PARAMETERS
     # =========================
-    for m in models:
-        df = data[m]
+    category_weights = {
+        "move_legality": 8,
+        "piece_placement": 6,
+        "material": 5,
+        "piece_relations": 4,
+        "geometry": 3,
+        "reasoning": 2,
+        "other": 1
+    }
 
-        total = len(df)
-        hallucinations = df["hallucination_type"].notna().sum()
+    severity_weights = {
+        "major": 3,
+        "medium": 2,
+        "minor": 1,
+        "small": 1
+    }
 
-        score = 1 - hallucinations / total
-
-        ranking_data.append({
-            "Model": m,
-            "Accuracy": score,
-            "Hallucinations": hallucinations,
-            "Total": total
-        })
-
-        temp = df[["hallucination_type"]].copy()
-        temp["Model"] = m
-        hallucination_types_all.append(temp)
-
-    ranking_df = pd.DataFrame(ranking_data)
-    hallucination_df = pd.concat(hallucination_types_all)
+    delta = 0.7
 
     # =========================
-    # TABLE
+    # CLEAN MAPPING
     # =========================
-    st.subheader("📋 Ranking Table")
-    st.dataframe(ranking_df.sort_values(by="Accuracy", ascending=False))
+    def extract_category(text):
+        text = str(text).lower()
 
-    st.markdown("---")
+        if "move" in text and "illegal" in text:
+            return "move_legality"
+        if "square" in text or "placement" in text:
+            return "piece_placement"
+        if "material" in text:
+            return "material"
+        if "pin" in text or "fork" in text or "attack" in text:
+            return "piece_relations"
+        if "diagonal" in text or "file" in text or "rank" in text:
+            return "geometry"
+        if "reason" in text:
+            return "reasoning"
+
+        return "other"
+
+    def extract_severity(text):
+        text = str(text).lower()
+
+        if "major" in text:
+            return "major"
+        if "medium" in text:
+            return "medium"
+
+        return "minor"
 
     # =========================
-    # FILTERS
+    # BUILD FULL DATASET
+    # =========================
+    all_rows = []
+
+    for model in models:
+        df = data[model].copy()
+        df = df.dropna(subset=["hallucination_type"])
+
+        for _, row in df.iterrows():
+            text = row["hallucination_type"]
+
+            cat = extract_category(text)
+            sev = extract_severity(text)
+
+            all_rows.append({
+                "Model": model,
+                "Puzzle": row["puzzle_id"],
+                "Category": cat,
+                "Severity": sev,
+                "BasePenalty": category_weights[cat] * severity_weights[sev]
+            })
+
+    full_df = pd.DataFrame(all_rows)
+
+    # =========================
+    # FILTERS (🔥 IMPORTANT)
     # =========================
     st.subheader("⚙️ Filters")
 
     selected_models = st.multiselect(
-        "Select Models",
-        ranking_df["Model"].unique(),
-        default=list(ranking_df["Model"].unique())
+        "Models",
+        full_df["Model"].unique(),
+        default=list(full_df["Model"].unique())
     )
 
-    clean_df = hallucination_df.dropna()
-    clean_df = clean_df[clean_df["Model"].isin(selected_models)]
-
-    selected_types = st.multiselect(
-        "Hallucination Types",
-        clean_df["hallucination_type"].unique(),
-        default=list(clean_df["hallucination_type"].unique())
+    selected_categories = st.multiselect(
+        "Categories",
+        full_df["Category"].unique(),
+        default=list(full_df["Category"].unique())
     )
 
-    clean_df = clean_df[clean_df["hallucination_type"].isin(selected_types)]
+    selected_severity = st.multiselect(
+        "Severity",
+        full_df["Severity"].unique(),
+        default=list(full_df["Severity"].unique())
+    )
+
+    filtered_df = full_df[
+        (full_df["Model"].isin(selected_models)) &
+        (full_df["Category"].isin(selected_categories)) &
+        (full_df["Severity"].isin(selected_severity))
+    ]
 
     # =========================
-    # HEATMAP 1: RAW
+    # SCORE COMPUTATION (CORRECT)
     # =========================
-    st.subheader("🧩 Hallucination Distribution")
+    model_scores = []
+    heatmap_data = []
 
-    type_counts = (
-        clean_df
-        .groupby(["Model", "hallucination_type"])
-        .size()
-        .reset_index(name="count")
-    )
+    for model in selected_models:
 
-    pivot_df = type_counts.pivot(
-        index="Model",
-        columns="hallucination_type",
-        values="count"
-    ).fillna(0)
+        df_model = filtered_df[filtered_df["Model"] == model]
+
+        total_penalty = 0
+
+        grouped = df_model.groupby(["Puzzle", "Category"])
+
+        for (puzzle, cat), group in grouped:
+
+            penalties = sorted(group["BasePenalty"], reverse=True)
+
+            group_penalty = 0
+            for i, p in enumerate(penalties):
+                group_penalty += p * (delta ** i)
+
+            total_penalty += group_penalty
+
+            heatmap_data.append({
+                "Model": model,
+                "Category": cat,
+                "Penalty": group_penalty
+            })
+
+        model_scores.append({
+            "Model": model,
+            "Penalty": total_penalty
+        })
+
+    scores_df = pd.DataFrame(model_scores)
+
+    # normalize
+    max_penalty = scores_df["Penalty"].max()
+    scores_df["Score"] = 100 * (1 - scores_df["Penalty"] / max_penalty)
+
+    scores_df = scores_df.sort_values(by="Score", ascending=False)
+
+    # =========================
+    # TABLE
+    # =========================
+    st.subheader("🏆 Ranking")
+    st.dataframe(scores_df)
+
+    st.markdown("---")
+
+    # =========================
+    # HEATMAP (RAW)
+    # =========================
+    st.subheader("🧩 Penalty Heatmap")
+
+    heat_df = pd.DataFrame(heatmap_data)
+
+    pivot_df = heat_df.groupby(["Model", "Category"])["Penalty"].sum().unstack().fillna(0)
 
     fig = px.imshow(
         pivot_df,
         text_auto=True,
         aspect="auto",
-        color_continuous_scale="Viridis"
+        color_continuous_scale="Reds"
     )
 
     st.plotly_chart(fig, use_container_width=True)
@@ -353,7 +445,7 @@ elif selected == "Ranking":
     st.markdown("---")
 
     # =========================
-    # HEATMAP 2: NORMALIZED
+    # HEATMAP (NORMALIZED)
     # =========================
     st.subheader("📉 Normalized Behavior")
 
@@ -363,30 +455,10 @@ elif selected == "Ranking":
         norm_df,
         text_auto=".2f",
         aspect="auto",
-        color_continuous_scale="Plasma"
+        color_continuous_scale="Blues"
     )
 
     st.plotly_chart(fig2, use_container_width=True)
-
-
-# =========================
-# CONCLUSIONS
-# =========================
-elif selected == "Conclusions":
-
-    st.title("🧾 Conclusions")
-
-    st.markdown("""
-LLMs show strong potential for chess education, but current models suffer from:
-
-- Structural hallucinations (board misunderstanding)
-- Reasoning hallucinations (incorrect logic)
-- Overconfidence in incorrect outputs
-
-👉 They cannot yet function as reliable standalone instructors.
-
-Future systems should combine LLMs with deterministic chess engines.
-""")
 # =========================
 # CONCLUSIONS
 # =========================
