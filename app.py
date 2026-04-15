@@ -257,103 +257,116 @@ if selected == "Explorer":
 
 
 # =========================
-# RANKING
+# RANKING (DYNAMIC HEATMAPS)
 # =========================
 elif selected == "Ranking":
 
     import plotly.express as px
 
-    st.title("📊 Model Ranking & Analysis")
+    st.title("📊 Model Analysis (Interactive Heatmaps)")
 
-    category_weights = {
-        "move_legality": 8,
-        "piece_placement": 6,
-        "material": 5,
-        "piece_relations": 4,
-        "geometry": 3,
-        "reasoning": 2,
-        "other": 1
-    }
+    ranking_data = []
+    hallucination_types_all = []
 
-    severity_weights = {
-        "major": 3,
-        "medium": 2,
-        "minor": 1,
-        "small": 1
-    }
+    # =========================
+    # BUILD DATA
+    # =========================
+    for m in models:
+        df = data[m]
 
-    delta = 0.7
+        total = len(df)
+        hallucinations = df["hallucination_type"].notna().sum()
 
-    def extract_category(text):
-        text = str(text).lower()
+        score = 1 - hallucinations / total
 
-        if "illegal" in text:
-            return "move_legality"
-        if "square" in text:
-            return "piece_placement"
-        if "material" in text:
-            return "material"
-        if "pin" in text or "fork" in text:
-            return "piece_relations"
-        if "diagonal" in text:
-            return "geometry"
-        if "reason" in text:
-            return "reasoning"
+        ranking_data.append({
+            "Model": m,
+            "Accuracy": score,
+            "Hallucinations": hallucinations,
+            "Total": total
+        })
 
-        return "other"
+        temp = df[["hallucination_type"]].copy()
+        temp["Model"] = m
+        hallucination_types_all.append(temp)
 
-    def extract_severity(text):
-        text = str(text).lower()
-        if "major" in text:
-            return "major"
-        if "medium" in text:
-            return "medium"
-        return "minor"
+    ranking_df = pd.DataFrame(ranking_data)
+    hallucination_df = pd.concat(hallucination_types_all)
 
-    all_rows = []
+    # =========================
+    # TABLE
+    # =========================
+    st.subheader("📋 Ranking Table")
+    st.dataframe(ranking_df.sort_values(by="Accuracy", ascending=False))
 
-    for model in models:
-        df = data[model].dropna(subset=["hallucination_type"])
+    st.markdown("---")
 
-        for _, row in df.iterrows():
-            cat = extract_category(row["hallucination_type"])
-            sev = extract_severity(row["hallucination_type"])
+    # =========================
+    # FILTERS
+    # =========================
+    st.subheader("⚙️ Filters")
 
-            all_rows.append({
-                "Model": model,
-                "Puzzle": row["puzzle_id"],
-                "Category": cat,
-                "Severity": sev,
-                "Penalty": category_weights[cat] * severity_weights[sev]
-            })
+    selected_models = st.multiselect(
+        "Select Models",
+        ranking_df["Model"].unique(),
+        default=list(ranking_df["Model"].unique())
+    )
 
-    df_all = pd.DataFrame(all_rows)
+    clean_df = hallucination_df.dropna()
+    clean_df = clean_df[clean_df["Model"].isin(selected_models)]
 
-    model_scores = []
+    selected_types = st.multiselect(
+        "Hallucination Types",
+        clean_df["hallucination_type"].unique(),
+        default=list(clean_df["hallucination_type"].unique())
+    )
 
-    for model in models:
-        df_model = df_all[df_all["Model"] == model]
+    clean_df = clean_df[clean_df["hallucination_type"].isin(selected_types)]
 
-        total = 0
-        grouped = df_model.groupby(["Puzzle", "Category"])
+    # =========================
+    # HEATMAP 1: RAW
+    # =========================
+    st.subheader("🧩 Hallucination Distribution")
 
-        for _, group in grouped:
-            penalties = sorted(group["Penalty"], reverse=True)
-            for i, p in enumerate(penalties):
-                total += p * (delta ** i)
+    type_counts = (
+        clean_df
+        .groupby(["Model", "hallucination_type"])
+        .size()
+        .reset_index(name="count")
+    )
 
-        model_scores.append({"Model": model, "Penalty": total})
+    pivot_df = type_counts.pivot(
+        index="Model",
+        columns="hallucination_type",
+        values="count"
+    ).fillna(0)
 
-    scores_df = pd.DataFrame(model_scores)
-    max_penalty = scores_df["Penalty"].max()
-    scores_df["Score"] = 100 * (1 - scores_df["Penalty"] / max_penalty)
+    fig = px.imshow(
+        pivot_df,
+        text_auto=True,
+        aspect="auto",
+        color_continuous_scale="Viridis"
+    )
 
-    st.dataframe(scores_df.sort_values("Score", ascending=False))
-
-    pivot = df_all.groupby(["Model", "Category"])["Penalty"].sum().unstack().fillna(0)
-
-    fig = px.imshow(pivot, text_auto=True)
     st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("---")
+
+    # =========================
+    # HEATMAP 2: NORMALIZED
+    # =========================
+    st.subheader("📉 Normalized Behavior")
+
+    norm_df = pivot_df.div(pivot_df.sum(axis=1), axis=0)
+
+    fig2 = px.imshow(
+        norm_df,
+        text_auto=".2f",
+        aspect="auto",
+        color_continuous_scale="Plasma"
+    )
+
+    st.plotly_chart(fig2, use_container_width=True)
 
 
 # =========================
