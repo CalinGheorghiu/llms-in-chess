@@ -1,0 +1,6 @@
+streamlit
+pandas
+python-chess
+plotly
+openpyxl
+streamlit-option-menu
