@@ -1,12 +1,14 @@
-import streamlit as st
-import pandas as pd
+import os
+
 import chess
 import chess.pgn
 import chess.svg
+import pandas as pd
+import streamlit as st
 from streamlit_option_menu import option_menu
-import os
 
 st.set_page_config(layout="wide")
+
 
 # =========================
 # LOAD EXCEL
@@ -44,10 +46,7 @@ def load_pgn_sequences(pgn_file):
             board = game.board()
             moves = list(game.mainline_moves())
 
-            puzzles[i] = {
-                "initial_fen": board.fen(),
-                "moves": moves
-            }
+            puzzles[i] = {"initial_fen": board.fen(), "moves": moves}
 
             i += 1
 
@@ -57,7 +56,7 @@ def load_pgn_sequences(pgn_file):
 # =========================
 # FILES (UPDATED STRUCTURE)
 # =========================
-excel_file = "data/dataset-scored.xlsx"
+excel_file = "data/dataset_scored.xlsx"
 pgn_file = "data/puzzles_with_moves.pgn"
 
 if not os.path.exists(excel_file):
@@ -71,18 +70,22 @@ if not os.path.exists(pgn_file):
 models, data = load_data(excel_file)
 pgn_data = load_pgn_sequences(pgn_file)
 
-
 # =========================
 # NAVIGATION
 # =========================
-with st.sidebar:
-    selected = option_menu(
-        "Navigation",
-        ["Explorer", "Ranking", "Conclusions"],
-        icons=["search", "bar-chart", "file-text"],
-        default_index=0
-    )
+pages = ["Explorer", "Ranking", "Conclusions", "Table 1"]
 
+if "nav_initialized" not in st.session_state:
+    param = st.query_params.get("page", "")
+    st.session_state._nav_default = pages.index(param) if param in pages else 0
+    st.session_state.nav_initialized = True
+
+with st.sidebar:
+    selected = option_menu("Navigation", pages, icons=["search", "bar-chart", "file-text", "table"],
+                           default_index=st.session_state._nav_default)
+
+if st.query_params.get("page") != selected:
+    st.query_params["page"] = selected
 
 # =========================
 # EXPLORER
@@ -91,11 +94,7 @@ if selected == "Explorer":
 
     st.title("♟️ LLM Chess Explorer")
 
-    selected_models = st.sidebar.multiselect(
-        "Models",
-        models,
-        default=[models[0]]
-    )
+    selected_models = st.sidebar.multiselect("Models", models, default=[models[0]])
 
     if not selected_models:
         st.warning("Select at least one model")
@@ -103,10 +102,7 @@ if selected == "Explorer":
 
     df_main = data[selected_models[0]]
 
-    puzzle_id = st.sidebar.selectbox(
-        "Puzzle",
-        sorted(df_main["puzzle_id"].unique())
-    )
+    puzzle_id = st.sidebar.selectbox("Puzzle", sorted(df_main["puzzle_id"].unique()))
 
     puzzle = pgn_data[puzzle_id]
     initial_fen = puzzle["initial_fen"]
@@ -194,9 +190,9 @@ if selected == "Explorer":
             temp_board.push(m)
 
             if i == st.session_state.move_index - 1:
-                st.markdown(f"👉 **{i+1}. {san}**")
+                st.markdown(f"👉 **{i + 1}. {san}**")
             else:
-                st.markdown(f"{i+1}. {san}")
+                st.markdown(f"{i + 1}. {san}")
 
         st.markdown("---")
         st.subheader("🧠 Model Explanations & Corrections")
@@ -214,15 +210,12 @@ if selected == "Explorer":
                     df = data[model]
                     rows = df[df["puzzle_id"] == puzzle_id]
 
-                    move_rows = rows[
-                        rows["move"].astype(str).str.contains(current_san, na=False)
-                    ]
+                    move_rows = rows[rows["move"].astype(str).str.contains(current_san, na=False)]
 
                     if move_rows.empty:
                         st.warning("No explanation")
                     else:
                         for j, r in enumerate(move_rows.itertuples(), 1):
-
                             st.markdown(f"**Explanation {j}**")
                             st.write(r.original_claim)
 
@@ -245,13 +238,9 @@ if selected == "Explorer":
         rows = df[df["puzzle_id"] == puzzle_id]
 
         for r in rows.itertuples():
-            table_rows.append({
-                "Model": model,
-                "Move": r.move,
-                "Explanation": r.original_claim,
-                "Hallucination": r.hallucination_type,
-                "Correction": r.fixed_claim
-            })
+            table_rows.append(
+                {"Model": model, "Move": r.move, "Explanation": r.original_claim, "Hallucination": r.hallucination_type,
+                 "Correction": r.fixed_claim})
 
     st.dataframe(pd.DataFrame(table_rows))
 
@@ -269,24 +258,13 @@ elif selected == "Ranking":
     # =========================
     # FIXED PARAMETERS
     # =========================
-    category_weights = {
-        "move_legality": 8,
-        "piece_placement": 6,
-        "material": 5,
-        "piece_relations": 4,
-        "geometry": 3,
-        "reasoning": 2,
-        "other": 1
-    }
+    category_weights = {"move_legality": 8, "piece_placement": 6, "material": 5, "piece_relations": 4, "geometry": 3,
+                        "reasoning": 2, "other": 1}
 
-    severity_weights = {
-        "major": 3,
-        "medium": 2,
-        "minor": 1,
-        "small": 1
-    }
+    severity_weights = {"major": 3, "medium": 2, "minor": 1, "small": 1}
 
     delta = 0.7
+
 
     # =========================
     # CLEAN MAPPING
@@ -309,6 +287,7 @@ elif selected == "Ranking":
 
         return "other"
 
+
     def extract_severity(text):
         text = str(text).lower()
 
@@ -318,6 +297,7 @@ elif selected == "Ranking":
             return "medium"
 
         return "minor"
+
 
     # =========================
     # BUILD FULL DATASET
@@ -334,13 +314,8 @@ elif selected == "Ranking":
             cat = extract_category(text)
             sev = extract_severity(text)
 
-            all_rows.append({
-                "Model": model,
-                "Puzzle": row["puzzle_id"],
-                "Category": cat,
-                "Severity": sev,
-                "BasePenalty": category_weights[cat] * severity_weights[sev]
-            })
+            all_rows.append({"Model": model, "Puzzle": row["puzzle_id"], "Category": cat, "Severity": sev,
+                             "BasePenalty": category_weights[cat] * severity_weights[sev]})
 
     full_df = pd.DataFrame(all_rows)
 
@@ -349,29 +324,16 @@ elif selected == "Ranking":
     # =========================
     st.subheader("⚙️ Filters")
 
-    selected_models = st.multiselect(
-        "Models",
-        full_df["Model"].unique(),
-        default=list(full_df["Model"].unique())
-    )
+    selected_models = st.multiselect("Models", full_df["Model"].unique(), default=list(full_df["Model"].unique()))
 
-    selected_categories = st.multiselect(
-        "Categories",
-        full_df["Category"].unique(),
-        default=list(full_df["Category"].unique())
-    )
+    selected_categories = st.multiselect("Categories", full_df["Category"].unique(),
+                                         default=list(full_df["Category"].unique()))
 
-    selected_severity = st.multiselect(
-        "Severity",
-        full_df["Severity"].unique(),
-        default=list(full_df["Severity"].unique())
-    )
+    selected_severity = st.multiselect("Severity", full_df["Severity"].unique(),
+                                       default=list(full_df["Severity"].unique()))
 
-    filtered_df = full_df[
-        (full_df["Model"].isin(selected_models)) &
-        (full_df["Category"].isin(selected_categories)) &
-        (full_df["Severity"].isin(selected_severity))
-    ]
+    filtered_df = full_df[(full_df["Model"].isin(selected_models)) & (full_df["Category"].isin(selected_categories)) & (
+        full_df["Severity"].isin(selected_severity))]
 
     # =========================
     # SCORE COMPUTATION (CORRECT)
@@ -389,7 +351,7 @@ elif selected == "Ranking":
 
         for (puzzle, cat), group in grouped:
 
-            penalties = sorted(group["BasePenalty"], reverse=True)
+            penalties: list[float] = sorted(group["BasePenalty"].tolist(), reverse=True)
 
             group_penalty = 0
             for i, p in enumerate(penalties):
@@ -397,16 +359,9 @@ elif selected == "Ranking":
 
             total_penalty += group_penalty
 
-            heatmap_data.append({
-                "Model": model,
-                "Category": cat,
-                "Penalty": group_penalty
-            })
+            heatmap_data.append({"Model": model, "Category": cat, "Penalty": group_penalty})
 
-        model_scores.append({
-            "Model": model,
-            "Penalty": total_penalty
-        })
+        model_scores.append({"Model": model, "Penalty": total_penalty})
 
     scores_df = pd.DataFrame(model_scores)
 
@@ -433,14 +388,9 @@ elif selected == "Ranking":
 
     pivot_df = heat_df.groupby(["Model", "Category"])["Penalty"].sum().unstack().fillna(0)
 
-    fig = px.imshow(
-        pivot_df,
-        text_auto=True,
-        aspect="auto",
-        color_continuous_scale="Reds"
-    )
+    fig = px.imshow(pivot_df, text_auto=True, aspect="auto", color_continuous_scale="Reds")
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     st.markdown("---")
 
@@ -451,14 +401,9 @@ elif selected == "Ranking":
 
     norm_df = pivot_df.div(pivot_df.sum(axis=1), axis=0)
 
-    fig2 = px.imshow(
-        norm_df,
-        text_auto=".2f",
-        aspect="auto",
-        color_continuous_scale="Blues"
-    )
+    fig2 = px.imshow(norm_df, text_auto=".2f", aspect="auto", color_continuous_scale="Blues")
 
-    st.plotly_chart(fig2, use_container_width=True)
+    st.plotly_chart(fig2, width="stretch")
 # =========================
 # CONCLUSIONS
 # =========================
@@ -549,7 +494,59 @@ To safely leverage LLMs in educational systems:
 - Use LLMs for **language**, not **validation**
 
 👉 Hybrid systems can provide:
-- ✔ Accurate calculations  
-- ✔ Clear explanations  
-- ✔ Reliable learning experience  
+- ✔ Accurate calculations
+- ✔ Clear explanations
+- ✔ Reliable learning experience
 """)
+
+# =========================
+# TABLE 1
+# =========================
+elif selected == "Table 1":
+
+    import plotly.express as px
+
+    st.title("📋 Table 1 - Normalized Model Scores")
+
+
+    @st.cache_data
+    def load_table1():
+        df = pd.read_excel("data/table_1.xlsx", header=1)
+        df.columns = ["Model", "Art. 1 ChessQA", "Art. 2 Geometric", "Art. 3 LLM CHESS", "Art. 4 EDCEW", "Appearances",
+                      "Mean Score"]
+        df = df.dropna(subset=["Model"])
+        df = df.reset_index(drop=True)
+        return df
+
+
+    df_t1 = load_table1()
+
+    st.markdown("""
+**Table 1.** Normalized and aggregated model scores across the selected studies.
+Each article score is normalized to a 0-100 scale. *Mean Score* is a weighted average across appearances.
+""")
+
+    st.markdown("---")
+
+    score_cols = ["Art. 1 ChessQA", "Art. 2 Geometric", "Art. 3 LLM CHESS", "Art. 4 EDCEW", "Mean Score"]
+
+
+    def fmt(v):
+        return f"{v:.2f}" if pd.notna(v) else "-"
+
+
+    styled = df_t1.style.format({c: fmt for c in score_cols})
+
+    st.dataframe(styled, width="stretch", hide_index=True)
+
+    st.markdown("---")
+
+    # Bar chart: Mean Score
+    st.subheader("📊 Mean Score by Model")
+
+    chart_df = df_t1[["Model", "Mean Score"]].dropna().sort_values("Mean Score", ascending=False)
+
+    fig = px.bar(chart_df, x="Mean Score", y="Model", orientation="h", color="Mean Score",
+                 color_continuous_scale="RdYlGn", range_color=[0, 100], labels={"Mean Score": "Mean Score (0-100)"}, )
+    fig.update_layout(yaxis=dict(autorange="reversed"), coloraxis_showscale=False)
+    st.plotly_chart(fig, width="stretch")

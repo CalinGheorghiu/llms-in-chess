@@ -4,3 +4,5 @@ python-chess
 plotly
 openpyxl
 streamlit-option-menu
+
+chess
