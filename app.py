@@ -73,7 +73,7 @@ pgn_data = load_pgn_sequences(pgn_file)
 # =========================
 # NAVIGATION
 # =========================
-pages = ["Explorer", "Ranking", "Conclusions", "Table 1"]
+pages = ["Explorer", "Ranking", "Conclusions", "Aggregated Scores"]
 
 if "nav_initialized" not in st.session_state:
     param = st.query_params.get("page", "")
@@ -502,16 +502,16 @@ To safely leverage LLMs in educational systems:
 # =========================
 # TABLE 1
 # =========================
-elif selected == "Table 1":
+elif selected == "Aggregated Scores":
 
     import plotly.express as px
 
-    st.title("📋 Table 1 - Normalized Model Scores")
+    st.title("📋 Aggregated Scores")
 
 
     @st.cache_data
-    def load_table1():
-        df = pd.read_excel("data/table_1.xlsx", header=1)
+    def load_aggregated_scores():
+        df = pd.read_excel("data/aggregated_scores.xlsx", header=1)
         df.columns = ["Model", "Art. 1 ChessQA", "Art. 2 Geometric", "Art. 3 LLM CHESS", "Art. 4 EDCEW", "Appearances",
                       "Mean Score"]
         df = df.dropna(subset=["Model"])
@@ -519,10 +519,10 @@ elif selected == "Table 1":
         return df
 
 
-    df_t1 = load_table1()
+    df_t1 = load_aggregated_scores()
 
     st.markdown("""
-**Table 1.** Normalized and aggregated model scores across the selected studies.
+Normalized and aggregated model scores across the selected studies.
 Each article score is normalized to a 0-100 scale. *Mean Score* is a weighted average across appearances.
 """)
 

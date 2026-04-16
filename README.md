@@ -31,14 +31,14 @@ repo/
 ├── data/
 │   ├── dataset_scored.xlsx    # Annotated dataset
 │   ├── puzzles_with_moves.pgn # Ground truth chess puzzles
-│   ├── table_1.xlsx           # Normalized model scores across studies
+│   ├── aggregated_scores.xlsx           # Normalized model scores across studies
 ```
 
 ---
 
 ## 📊 Dataset Description
 
-### 1. `table_1.xlsx`
+### 1. `aggregated_scores.xlsx`
 
 Contains normalized and aggregated model scores across all reviewed studies (Art. 1–4).
 Scores are on a 0–100 scale. The *Mean Score* column is a weighted average by number of appearances.
@@ -149,13 +149,13 @@ The scoring system is based on three components:
 
 ---
 
-### 📋 Table 1
+### 📋 Aggregated Scores
 
 * Normalized and aggregated model scores across all reviewed studies
 * Each article score is normalized to a 0–100 scale
 * Mean Score is a weighted average across appearances
 * Interactive bar chart for visual comparison
-* Accessible directly via URL: `?page=Table+1`
+* Accessible directly via URL: `?page=Aggregated+Scores`
 
 ---
 
