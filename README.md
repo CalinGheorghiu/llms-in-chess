@@ -29,15 +29,23 @@ repo/
 │
 ├── app.py                      # Streamlit application
 ├── data/
-│   ├── dataset-scored.xlsx    # Annotated dataset
+│   ├── dataset_scored.xlsx    # Annotated dataset
 │   ├── puzzles_with_moves.pgn # Ground truth chess puzzles
+│   ├── table_1.xlsx           # Normalized model scores across studies
 ```
 
 ---
 
 ## 📊 Dataset Description
 
-### 1. `dataset-scored.xlsx`
+### 1. `table_1.xlsx`
+
+Contains normalized and aggregated model scores across all reviewed studies (Art. 1–4).
+Scores are on a 0–100 scale. The *Mean Score* column is a weighted average by number of appearances.
+
+---
+
+### 2. `dataset_scored.xlsx`
 
 Contains annotated outputs from multiple LLMs.
 
@@ -58,7 +66,7 @@ Data <MODEL_NAME>
 
 ---
 
-### 2. `puzzles_with_moves.pgn`
+### 3. `puzzles_with_moves.pgn`
 
 Contains the **ground truth chess positions and move sequences**.
 
@@ -138,6 +146,16 @@ The scoring system is based on three components:
 * Summary of findings
 * Analysis of failure modes
 * Implications for e-learning systems
+
+---
+
+### 📋 Table 1
+
+* Normalized and aggregated model scores across all reviewed studies
+* Each article score is normalized to a 0–100 scale
+* Mean Score is a weighted average across appearances
+* Interactive bar chart for visual comparison
+* Accessible directly via URL: `?page=Table+1`
 
 ---
 
